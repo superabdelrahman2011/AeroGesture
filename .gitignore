@@ -1,0 +1,13 @@
+# Python temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Operating system files
+Thumbs.db
+.DS_Store
+
+# Arduino build folders (optional but keeps repo clean)
+build/
