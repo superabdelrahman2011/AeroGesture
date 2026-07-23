@@ -1,91 +1,79 @@
-# AeroGesture
+# AeroGesture FPV Ground Control Station & Flight Core
 
-A lightweight dualunit distributed flight system for flying a quadcopter using bare-hand gestures Instead of straining a drone's battery with demanding computer vision tasks on a flying processor the video is streamed back to a separate groundbased system (like a Raspberry Pi or a laptop) to handle processing ensuring that the flying unit is feather light and free from edge AI overheating issues
+A zero-latency, vision-based FPV Ground Control Station (GCS) and ESP32-S3 drone flight core. AeroGesture streams high-speed MJPEG video from an **ESP32-S3-CAM** micro-drone to a laptop ground station, tracks hand movements in 3D using **MediaPipe**, filters signal noise via **Exponential Moving Average (EMA)** smoothing, and transmits 4-axis flight telemetry back to the drone over a non-blocking **UDP link**.
 
-# System Overview
+---
 
-The system is divided into two main hardware components that communicate wirelessly via a low-latency local Wi-Fi connection
+## 📡 System Architecture & Data Flow
 
 
-[ PIECE 1: THE GROUND STATION ]              [ PIECE 2: THE AIRBORNE UNIT ]
-┌────────────────────────────────┐              ┌────────────────────────────────┐
-│   Raspberry Pi 3 / Laptop      │              │         ESP32-S3-CAM           │
-│  - Catches Wi-Fi video feed    │              │  - Broadcasts raw video stream │
-│  - MediaPipe tracking (21 pts) │              │  - Listens for UDP flight data │
-└───────────────┬────────────────┘              └───────────────▲────────────────┘
-                │                                               │
-                │ (UDP Control Data)                            │ (Wi-Fi Video Stream)
-                └───────────────────────────────────────────────┘
-                                                                │
-                                                ┌───────────────▼────────────────┐
-                                                │     F4 Flight Controller       │
-                                                │  - Interprets MSP serial data  │
-                                                │  - Commands 4x 8520 motors     │
-                                                └────────────────────────────────┘
+```
 
-# required componenets and pricing
+┌──────────────────────────────────────┐       HTTP MJPEG Stream        ┌──────────────────────────────────────┐
+│                                      │ ─────────────────────────────> │                                      │
+│  ESP32-S3-CAM Drone                  │   ([http://192.168.4.1/stream](http://192.168.4.1/stream))  │  Laptop Ground Station               │
+│  Access Point: 192.168.4.1           │                                │  (main.py)                           │
+│  UDP Port: 5005                      │ <───────────────────────────── │                                      │
+└──────────────────────────────────────┘      16-Byte UDP Telemetry     └──────────────────────────────────────┘
 
-`Ground Station` 
 
-Raspberry Pi 3 Model B+ (or a standard Windows laptop) $35 Runs the gesture tracking software and handles flight path calculations.
+```
 
- Wi-Fi Connectivity: Integrated.
-Intercepts the video stream and broadcasts command packets back.
- 
-`The Drone`
+1. **Camera Feed:** The ESP32-S3 hosts an HTTP MJPEG stream at `192.168.4.1/stream`.
+2. **Buffer Purging:** Python reads the stream in a background thread using `cap.grab()`, purging stale TCP frames to eliminate FPV video delay.
+3. **Gesture Extraction:** MediaPipe Hand Landmarker outputs 21 3D coordinates.
+4. **Signal Filtering:** Raw axis inputs pass through an EMA filter ($EMA_t = \alpha \cdot X_t + (1 - \alpha) \cdot EMA_{t-1}$) to eliminate hand tremors.
+5. **UDP Transmission:** Controls are packed into a 16-byte Little-Endian binary payload (`<ffff`) and sent to port `5005`.
+6. **Watchdog Failsafe:** If the ESP32 loses UDP communications for $>400\text{ms}$, motor outputs immediately zero out.
 
-1) 75mm or 85mm Frame:$6.
- A tiny, durable micro-whoop frame with built-in propeller guards
+## 🎮 Single-Hand 4-Axis Flight Controls
 
-2) ESP32-S3-CAM (N16R8 model): ~$12.
- Acts as the Wi-Fi hotspot, streams video, and receives the UDP control signals.
- 
-3) 1S Brushed F4Flight Controller: $30.
- Runs Betaflight and directly controls the motors.
-     
-4) 8520 Brushed Motors (4-pack): $10. High-speed,  coreless motors driven by the onboard MOSFETs.
-     
-5) 1S LiPo Battery (BT2.0 connector):$6.Main power source.
-      
-6) 5V Step-Up Boost Regulator: $4. Prevents voltage sags/brownouts when the motors draw heavy power.
-      
- Total Estimated Hardware Expenses: $103 (Drops to around $68 if you just use a laptop instead of buying a Raspberry Pi).
-      
-`Data flow`
-      
- 1) The Video Transmission:
-  On powerup the drones ESP32-S3-CAM creates a local Wi-Fi access point
- called AeroGesture_Net It streams video at 30 FPS down to the ground station
+| Control Axis | Hand Gesture / Position | Telemetry Output |
+| :--- | :--- | :--- |
+| **Roll (Left / Right)** | Shift wrist left or right relative to center target | `[-1.0, 1.0]` |
+| **Pitch (Forward / Back)** | Shift wrist up or down relative to center target | `[-1.0, 1.0]` |
+| **Yaw (Rotation)** | Tilt wrist/hand sideways (arctan2 angle relative to vertical) | `[-1.0, 1.0]` |
+| **Throttle (Altitude)** | Distance between Index Tip and Thumb Tip (Pinch = $0\%$, Open = $100\%$) | `[0.0, 1.0]` |
+| **Center Deadzone** | Keep wrist inside center target circle | Hover Lock (`[0, 0, 0, 0]`) |
+| **Emergency Stop** | Curl hand into a closed fist | Emergency Brake / Disarm |
 
- 2) Gesture Recognition: 
- The ground station captures the stream and uses MediaPipe to track 21 key joints on your hand To calculate throttle, it measures the vertical distance between your wrist and index fingertip:delta Y= Wrist_y-IndexTip_y
- 
- 3) Control Signal Delivery:
- The ground station translates your hand position into Roll Pitch Throttle and Yaw values packs them into tight binary UDP packets and beams them back to the drones IP (192.168.4.1)
+## 🛠️ Installation & Setup
 
- 4) Execution on the Drone:
- The ESP32 catches the UDP packets and passes them to the F4 Flight Controller over a direct serial (UART) connection using MultiWii Serial Protocol (MSP) commands. Betaflight processes these inputs to spin the motors and move the drone 
- 
- `Betaflight Configuration`
+### 1. ESP32-S3 Firmware Setup
+1. Open `drone_firmware.ino` in the **Arduino IDE**.
+2. Select **ESP32-S3 Dev Module** as your target board.
+3. Enable **PSRAM: "OPI PSRAM"** in Board Settings.
+4. Flash the code to your ESP32-S3-CAM.
 
- **To allow the flight controller to receive control inputs over the serial wire instead of a standard radio receiver:**
+### 2. Python Ground Station Setup
+1. Open your terminal in the project directory and activate your virtual environment:
+   ```bash
+   .\drone_env\Scripts\activate
 
-1) Connect the flight controller to your computer via USB and open Betaflight Configurator
+```
 
-2) Go to the Ports tab Find the UART wired to your ESP32s TX/RX pins turn on MSP for that port and leave the baud rate at 115200
- 3) Go to the Configuration Receiver tab Set the Receiver Mode to Serialbased receiver and choose MSP RX input as the provider (or run feature RX_MSP directly in the CLI tab)
+2. Install required dependencies:
+```bash
+pip install -r requirements.txt
 
-4) Click Save and Reboot
+```
 
- `Project StructurePlaintext`
 
-├── .gitignore
-├── README.md
-├── GroundStation/
-│   └── gesture_brain.py  <-- Python gesture tracking script (Ground)
-└── DroneFirmware/
-    └── esp32_streamer.ino <-- Arduino Wi-Fi AP & receiver code (Drone)
 
-**Important Safety Warning**
+---
 
-Remove the propellers from your drone before testing on your desk. Never plug in the 1S flight battery while configuring serial settings or testing code with the blades attached. Any small delay in your script or a glitch in the wireless communication can instantly jump the motors to full throttle, which will ruin your gear or cause injury.
+## 🚀 Running the System
+
+1. Power on the ESP32-S3 drone.
+2. Connect your laptop Wi-Fi to the drone's Access Point:
+* **SSID:** `AeroGesture-Drone`
+* **Password:** `Password123`
+
+
+3. Launch the Python Ground Control Station:
+```bash
+python main.py
+
+```
+
+4. Press `q` while focused on the video window to safely disarm and terminate the connection.
