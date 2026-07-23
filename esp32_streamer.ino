@@ -3,16 +3,10 @@
 #include <WiFiUdp.h>
 #include "esp_http_server.h"
 
-// ==========================================
-// 📡 NETWORK CONFIGURATION
-// ==========================================
 const char* ssid = "AeroGesture-Drone";
 const char* password = "Password123";
 const int UDP_PORT = 5005;
 
-// ==========================================
-// 🎯 CAMERA PINOUT (ESP32-S3-CAM / FREENOVE)
-// ==========================================
 #define PWDN_GPIO_NUM    -1
 #define RESET_GPIO_NUM   -1
 #define XCLK_GPIO_NUM    15
@@ -30,9 +24,6 @@ const int UDP_PORT = 5005;
 #define HREF_GPIO_NUM    7
 #define PCLK_GPIO_NUM    13
 
-// ==========================================
-// 📦 TELEMETRY PACKET (Explicit Alignment)
-// ==========================================
 struct __attribute__((packed)) TelemetryPacket {
     float pitch;    // -1.0 to 1.0
     float roll;     // -1.0 to 1.0
@@ -47,9 +38,7 @@ httpd_handle_t stream_httpd = NULL;
 unsigned long lastPacketTime = 0;
 const unsigned long FAILSAFE_TIMEOUT_MS = 400;
 
-// ==========================================
-// 🎥 MJPEG STREAM HANDLER
-// ==========================================
+
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
 static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
