@@ -6,24 +6,18 @@ import time
 import threading
 import numpy as np
 
-# ==========================================
-# ⚙️ SYSTEM CONFIGURATION (TEST MODE)
-# ==========================================
-USE_WEBCAM = True        # Set to True for testing without drone hardware
-WEBCAM_INDEX = 0         # Default laptop camera
-DRONE_IP = "192.168.4.1" # Target IP when drone arrives
+
+USE_WEBCAM = True        
+WEBCAM_INDEX = 0         
+DRONE_IP = "192.168.4.1" 
 UDP_PORT = 5005
 
-ALPHA_SMOOTH = 0.25      # EMA Filter factor (0.1 = smooth, 0.9 = fast)
-DEADZONE_RADIUS = 50     # Pixels from screen center for Hover Lock
+ALPHA_SMOOTH = 0.25   
+DEADZONE_RADIUS = 50     
 
 # Setup Non-Blocking UDP Socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setblocking(False)
-
-# ==========================================
-# 🚀 THREADED VIDEO ENGINE
-# ==========================================
 class ThreadedVideoStream:
     """Fetches frames in a background thread to prevent GUI lag."""
     def __init__(self, src):
@@ -61,10 +55,6 @@ class ThreadedVideoStream:
         self.started = False
         if self.cap.isOpened():
             self.cap.release()
-
-# ==========================================
-# 🧹 EXPONENTIAL MOVING AVERAGE (EMA) FILTER
-# ==========================================
 class EMAFilter:
     def __init__(self, alpha=0.25):
         self.alpha = alpha
